@@ -781,7 +781,10 @@ impl<T> Receiver<T> {
     /// ```
     pub fn recv_timeout(&self, timeout: Duration) -> Result<T, RecvTimeoutError> {
         let deadline = Instant::now() + timeout;
+        self.recv_deadline(deadline)
+    }
 
+    fn recv_deadline(&self, deadline: Instant) -> Result<T, RecvTimeoutError> {
         match &self.flavor {
             ReceiverFlavor::Array(chan) => chan.recv(Some(deadline)),
             ReceiverFlavor::List(chan) => chan.recv(Some(deadline)),
@@ -981,6 +984,15 @@ impl<T> Receiver<T> {
         TryIter { receiver: self }
     }
 
+    /// Same as `iter()` only sets a timeout.
+    pub fn timed_iter(&self, timeout: Duration) -> TimedIter<T> {
+        let deadline = Instant::now() + timeout;
+        TimedIter {
+            receiver: self,
+            deadline,
+        }
+    }
+
     /// Returns `true` if receivers belong to the same channel.
     ///
     /// # Examples
@@ -1096,6 +1108,11 @@ pub struct Iter<'a, T: 'a> {
     receiver: &'a Receiver<T>,
 }
 
+pub struct TimedIter<'a, T: 'a> {
+    receiver: &'a Receiver<T>,
+    deadline: Instant,
+}
+
 impl<'a, T> FusedIterator for Iter<'a, T> {}
 
 impl<'a, T> Iterator for Iter<'a, T> {
@@ -1106,9 +1123,23 @@ impl<'a, T> Iterator for Iter<'a, T> {
     }
 }
 
+impl<'a, T> Iterator for TimedIter<'a, T> {
+    type Item = T;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.receiver.recv_deadline(self.deadline).ok()
+    }
+}
+
 impl<'a, T> fmt::Debug for Iter<'a, T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.pad("Iter { .. }")
+    }
+}
+
+impl<'a, T> fmt::Debug for TimedIter<'a, T> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.pad("TimedIter { .. }")
     }
 }
 
